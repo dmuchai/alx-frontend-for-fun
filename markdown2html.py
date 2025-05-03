@@ -1,131 +1,164 @@
 #!/usr/bin/python3
 """
-Markdown to HTML converter
+markdown2html.py: A script to convert Markdown files to HTML.
+
+This script takes two arguments: the input Markdown file path and the output
+HTML file path. It supports converting headings, unordered lists, ordered lists,
+paragraphs, bold text, emphasis text, MD5 hashing, and 'c'/'C' removal based
+on specific Markdown syntax.
 """
+
 import sys
-import os
+import os.path
 import re
 import hashlib
 
+def convert_inline_formatting(line):
+    """
+    Applies inline formatting rules (bold, emphasis, MD5, remove 'c').
 
-def format_text(text):
-    """Apply all transformations to text."""
-    # MD5 conversion for [[text]]
-    def md5_replacer(match):
-        raw = match.group(1).lower()
-        return hashlib.md5(raw.encode()).hexdigest()
-    text = re.sub(r'\[\[(.+?)\]\]', md5_replacer, text)
+    Args:
+        line (str): A line of text potentially containing inline Markdown.
 
-    # Remove all 'c' and 'C' from ((text))
-    def remove_c_replacer(match):
-        return re.sub(r'[cC]', '', match.group(1))
-    text = re.sub(r'\(\((.+?)\)\)', remove_c_replacer, text)
+    Returns:
+        str: The line with inline Markdown converted to HTML or processed.
+    """
+    # Bold (**...**) -> <b>...</b>
+    line = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', line)
+    # Emphasis (__...__) -> <em>...</em>
+    line = re.sub(r'__(.*?)__', r'<em>\1</em>', line)
+    # MD5 ([[...]]) -> hash
+    md5_matches = re.findall(r'\[\[(.*?)\]\]', line)
+    if md5_matches:
+        for match in md5_matches:
+            hashed = hashlib.md5(match.encode('utf-8')).hexdigest()
+            line = line.replace(f'[[{match}]]', hashed)
+    # Remove c/C ((...)) -> ... (without c/C)
+    remove_c_matches = re.findall(r'\(\((.*?)\)\)', line)
+    if remove_c_matches:
+        for match in remove_c_matches:
+            processed = re.sub(r'[cC]', '', match)
+            line = line.replace(f'(({match}))', processed)
 
-    # Bold
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    return line
 
-    # Emphasis
-    text = re.sub(r'__(.+?)__', r'<em>\1</em>', text)
+def process_markdown_file(input_file, output_file):
+    """
+    Reads the Markdown file, processes it, and writes the HTML output.
 
-    return text
+    Args:
+        input_file (str): Path to the input Markdown file.
+        output_file (str): Path to the output HTML file.
+    """
+    html_lines = []
+    in_ul = False
+    in_ol = False
+    in_p = False
+    paragraph_buffer = []
 
+    with open(input_file, 'r') as md_file:
+        for line in md_file:
+            stripped_line = line.strip()
 
-def markdown_to_html(input_file, output_file):
-    """Convert Markdown to HTML."""
-    with open(input_file, 'r') as f:
-        lines = f.readlines()
+            # Close previous lists/paragraphs if necessary
+            # Check for new list/heading before closing paragraph
+            is_heading = re.match(r'^#+ ', stripped_line)
+            is_ul_item = stripped_line.startswith('- ')
+            is_ol_item = stripped_line.startswith('* ')
 
-    with open(output_file, 'w') as out:
-        in_ul = False
-        in_ol = False
-        in_p = False
+            # Close paragraph if current line isn't part of it or is blank
+            if in_p and (is_heading or is_ul_item or is_ol_item or not stripped_line):
+                if paragraph_buffer:
+                     # Apply inline formatting before joining
+                    processed_buffer = [convert_inline_formatting(p_line) for p_line in paragraph_buffer]
+                    html_lines.append("<p>\n" + "<br/>\n".join(processed_buffer) + "\n</p>\n")
+                paragraph_buffer = []
+                in_p = False
 
-        for line in lines:
-            line = line.rstrip()
+            # Close UL if the current line is not a UL item
+            if in_ul and not is_ul_item:
+                html_lines.append("</ul>\n")
+                in_ul = False
 
-            # Skip empty line
-            if not line:
-                if in_p:
-                    out.write('</p>\n')
-                    in_p = False
-                if in_ul:
-                    out.write('</ul>\n')
-                    in_ul = False
-                if in_ol:
-                    out.write('</ol>\n')
-                    in_ol = False
-                continue
+            # Close OL if the current line is not an OL item
+            if in_ol and not is_ol_item:
+                html_lines.append("</ol>\n")
+                in_ol = False
 
-            # Headings
-            heading_match = re.match(r'^(#{1,6}) (.*)', line)
-            if heading_match:
-                if in_p:
-                    out.write('</p>\n')
-                    in_p = False
-                if in_ul:
-                    out.write('</ul>\n')
-                    in_ul = False
-                if in_ol:
-                    out.write('</ol>\n')
-                    in_ol = False
-                level = len(heading_match.group(1))
-                content = format_text(heading_match.group(2))
-                out.write(f'<h{level}>{content}</h{level}>\n')
-                continue
+            # --- Process Current Line ---
 
-            # Unordered list
-            if line.startswith('- '):
-                if in_ol:
-                    out.write('</ol>\n')
-                    in_ol = False
+            # Headings (Task 1)
+            if is_heading:
+                level = len(stripped_line.split(' ')[0])
+                content = stripped_line[level + 1:]
+                # Apply inline formatting to heading content
+                content = convert_inline_formatting(content)
+                html_lines.append(f"<h{level}>{content}</h{level}>\n")
+                continue # Move to next line after processing heading
+
+            # Unordered List (Task 2)
+            if is_ul_item:
                 if not in_ul:
-                    out.write('<ul>\n')
+                    html_lines.append("<ul>\n")
                     in_ul = True
-                content = format_text(line[2:].strip())
-                out.write(f'<li>{content}</li>\n')
-                continue
+                content = stripped_line[2:]
+                 # Apply inline formatting to list item content
+                content = convert_inline_formatting(content)
+                html_lines.append(f"<li>{content}</li>\n")
+                continue # Move to next line
 
-            # Ordered list
-            if line.startswith('* '):
-                if in_ul:
-                    out.write('</ul>\n')
-                    in_ul = False
+            # Ordered List (Task 3)
+            if is_ol_item:
                 if not in_ol:
-                    out.write('<ol>\n')
+                    html_lines.append("<ol>\n")
                     in_ol = True
-                content = format_text(line[2:].strip())
-                out.write(f'<li>{content}</li>\n')
-                continue
+                content = stripped_line[2:]
+                 # Apply inline formatting to list item content
+                content = convert_inline_formatting(content)
+                html_lines.append(f"<li>{content}</li>\n")
+                continue # Move to next line
 
-            # Paragraph
-            content = format_text(line.strip())
-            if not in_p:
-                out.write('<p>\n')
-                in_p = True
-            else:
-                out.write('<br/>\n')
-            out.write(f'{content}\n')
+            # Paragraphs (Task 4, 5, 6)
+            if stripped_line: # Line is not blank, not heading, not list item
+                if not in_p:
+                    in_p = True
+                # Add raw line (without newline) to buffer. Formatting happens when closing <p>
+                paragraph_buffer.append(line.rstrip('\n'))
+            # else: # Blank line, paragraph boundary handled above
 
-        # Close open tags at EOF
-        if in_p:
-            out.write('</p>\n')
+        # --- End of File Cleanup ---
+        # Close any open lists or paragraphs
         if in_ul:
-            out.write('</ul>\n')
+            html_lines.append("</ul>\n")
         if in_ol:
-            out.write('</ol>\n')
+            html_lines.append("</ol>\n")
+        if in_p and paragraph_buffer:
+             # Apply inline formatting before joining
+            processed_buffer = [convert_inline_formatting(p_line) for p_line in paragraph_buffer]
+            html_lines.append("<p>\n" + "<br/>\n".join(processed_buffer) + "\n</p>\n")
+
+
+    # Write the generated HTML to the output file
+    with open(output_file, 'w') as html_file:
+        html_file.writelines(html_lines)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
+    # Check command-line arguments (Task 0)
+    if len(sys.argv) != 3:
         print("Usage: ./markdown2html.py README.md README.html", file=sys.stderr)
         sys.exit(1)
 
     input_file = sys.argv[1]
     output_file = sys.argv[2]
 
-    if not os.path.isfile(input_file):
+    # Check if Markdown file exists (Task 0)
+    if not os.path.exists(input_file):
         print(f"Missing {input_file}", file=sys.stderr)
         sys.exit(1)
 
-    markdown_to_html(input_file, output_file)
+    # Process the file
+    process_markdown_file(input_file, output_file)
+
+    # Exit successfully (Task 0)
     sys.exit(0)
