@@ -1,113 +1,122 @@
 #!/usr/bin/python3
 """
-Markdown to HTML converter - Task 4: Paragraph support
+markdown2html.py - Converts a Markdown file to HTML.
+Supports: headings, paragraphs, unordered/ordered lists, bold, emphasis.
 """
 
 import sys
 import os
 import re
 
-def convert_line(line):
-    """Classify the line and return (type, content)"""
-    heading_match = re.match(r'^(#{1,6}) (.+)', line)
-    if heading_match:
-        level = len(heading_match.group(1))
-        content = heading_match.group(2).strip()
-        return 'heading', f"<h{level}>{content}</h{level}>"
 
-    unordered_match = re.match(r'^- (.+)', line)
-    if unordered_match:
-        return 'ul_item', unordered_match.group(1).strip()
+def format_text(text):
+    """Apply bold and emphasis formatting."""
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+    text = re.sub(r'__(.+?)__', r'<em>\1</em>', text)
+    return text
 
-    ordered_match = re.match(r'^\* (.+)', line)
-    if ordered_match:
-        return 'ol_item', ordered_match.group(1).strip()
 
-    if line.strip() == "":
-        return 'blank', None
+def parse_line(line):
+    """Determine the type of line and return corresponding HTML."""
+    line = line.rstrip()
+    if not line:
+        return 'blank', ''
+    if line.startswith('#'):
+        level = len(line) - len(line.lstrip('#'))
+        content = line[level:].strip()
+        return 'heading', f"<h{level}>{format_text(content)}</h{level}>"
+    if line.startswith('- '):
+        return 'ul', f"<li>{format_text(line[2:].strip())}</li>"
+    if line.startswith('* '):
+        return 'ol', f"<li>{format_text(line[2:].strip())}</li>"
+    return 'text', format_text(line)
 
-    return 'paragraph', line.rstrip()
 
-def flush_paragraph(buffer, html_file):
-    """Flush collected paragraph lines to output"""
-    if not buffer:
-        return
-    html_file.write("<p>\n")
-    html_file.write("<br/>\n".join(buffer) + "\n")
-    html_file.write("</p>\n")
+def convert_markdown(input_file, output_file):
+    """Convert markdown content to HTML and write to output_file."""
+    with open(input_file, 'r') as md_file:
+        lines = md_file.readlines()
 
-def main():
+    html_lines = []
+    in_ul = False
+    in_ol = False
+    in_paragraph = False
+    paragraph_buffer = []
+
+    for line in lines:
+        line_type, content = parse_line(line)
+
+        if line_type == 'blank':
+            if in_paragraph:
+                html_lines.append("<p>\n" + "<br/>\n".join(paragraph_buffer) + "\n</p>")
+                paragraph_buffer = []
+                in_paragraph = False
+            if in_ul:
+                html_lines.append("</ul>")
+                in_ul = False
+            if in_ol:
+                html_lines.append("</ol>")
+                in_ol = False
+            continue
+
+        if line_type == 'heading':
+            if in_paragraph:
+                html_lines.append("<p>\n" + "<br/>\n".join(paragraph_buffer) + "\n</p>")
+                paragraph_buffer = []
+                in_paragraph = False
+            html_lines.append(content)
+        elif line_type == 'ul':
+            if in_paragraph:
+                html_lines.append("<p>\n" + "<br/>\n".join(paragraph_buffer) + "\n</p>")
+                paragraph_buffer = []
+                in_paragraph = False
+            if not in_ul:
+                html_lines.append("<ul>")
+                in_ul = True
+            html_lines.append(content)
+        elif line_type == 'ol':
+            if in_paragraph:
+                html_lines.append("<p>\n" + "<br/>\n".join(paragraph_buffer) + "\n</p>")
+                paragraph_buffer = []
+                in_paragraph = False
+            if not in_ol:
+                html_lines.append("<ol>")
+                in_ol = True
+            html_lines.append(content)
+        elif line_type == 'text':
+            if in_ul:
+                html_lines.append("</ul>")
+                in_ul = False
+            if in_ol:
+                html_lines.append("</ol>")
+                in_ol = False
+            in_paragraph = True
+            paragraph_buffer.append(content)
+
+    # Flush remaining open tags
+    if in_paragraph:
+        html_lines.append("<p>\n" + "<br/>\n".join(paragraph_buffer) + "\n</p>")
+    if in_ul:
+        html_lines.append("</ul>")
+    if in_ol:
+        html_lines.append("</ol>")
+
+    with open(output_file, 'w') as html_file:
+        for html in html_lines:
+            html_file.write(html + '\n')
+
+
+if __name__ == '__main__':
     if len(sys.argv) < 3:
         sys.stderr.write("Usage: ./markdown2html.py README.md README.html\n")
-        exit(1)
+        sys.exit(1)
 
-    input_file = sys.argv[1]
-    output_file = sys.argv[2]
+    input_path = sys.argv[1]
+    output_path = sys.argv[2]
 
-    if not os.path.isfile(input_file):
-        sys.stderr.write(f"Missing {input_file}\n")
-        exit(1)
+    if not os.path.isfile(input_path):
+        sys.stderr.write(f"Missing {input_path}\n")
+        sys.exit(1)
 
-    with open(input_file, 'r') as md_file, open(output_file, 'w') as html_file:
-        in_ul = False
-        in_ol = False
-        paragraph_buffer = []
-
-        for line in md_file:
-            line_type, content = convert_line(line)
-
-            if line_type != 'paragraph':
-                flush_paragraph(paragraph_buffer, html_file)
-                paragraph_buffer = []
-
-            if line_type == 'heading':
-                if in_ul:
-                    html_file.write("</ul>\n")
-                    in_ul = False
-                if in_ol:
-                    html_file.write("</ol>\n")
-                    in_ol = False
-                html_file.write(content + "\n")
-
-            elif line_type == 'ul_item':
-                if in_ol:
-                    html_file.write("</ol>\n")
-                    in_ol = False
-                if not in_ul:
-                    html_file.write("<ul>\n")
-                    in_ul = True
-                html_file.write(f"<li>{content}</li>\n")
-
-            elif line_type == 'ol_item':
-                if in_ul:
-                    html_file.write("</ul>\n")
-                    in_ul = False
-                if not in_ol:
-                    html_file.write("<ol>\n")
-                    in_ol = True
-                html_file.write(f"<li>{content}</li>\n")
-
-            elif line_type == 'blank':
-                flush_paragraph(paragraph_buffer, html_file)
-                paragraph_buffer = []
-                if in_ul:
-                    html_file.write("</ul>\n")
-                    in_ul = False
-                if in_ol:
-                    html_file.write("</ol>\n")
-                    in_ol = False
-
-            elif line_type == 'paragraph':
-                paragraph_buffer.append(content)
-
-        # Flush any remaining elements
-        flush_paragraph(paragraph_buffer, html_file)
-        if in_ul:
-            html_file.write("</ul>\n")
-        if in_ol:
-            html_file.write("</ol>\n")
-
-    exit(0)
-
-if __name__ == "__main__":
-    main()
+    convert_markdown(input_path, output_path)
+    sys.exit(0)
