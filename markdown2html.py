@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-Markdown to HTML converter - Task 3: Ordered and Unordered Lists
+Markdown to HTML converter - Task 4: Paragraph support
 """
 
 import sys
@@ -26,7 +26,15 @@ def convert_line(line):
     if line.strip() == "":
         return 'blank', None
 
-    return 'text', line.strip()
+    return 'paragraph', line.rstrip()
+
+def flush_paragraph(buffer, html_file):
+    """Flush collected paragraph lines to output"""
+    if not buffer:
+        return
+    html_file.write("<p>\n")
+    html_file.write("<br/>\n".join(buffer) + "\n")
+    html_file.write("</p>\n")
 
 def main():
     if len(sys.argv) < 3:
@@ -43,9 +51,14 @@ def main():
     with open(input_file, 'r') as md_file, open(output_file, 'w') as html_file:
         in_ul = False
         in_ol = False
+        paragraph_buffer = []
 
         for line in md_file:
             line_type, content = convert_line(line)
+
+            if line_type != 'paragraph':
+                flush_paragraph(paragraph_buffer, html_file)
+                paragraph_buffer = []
 
             if line_type == 'heading':
                 if in_ul:
@@ -75,6 +88,8 @@ def main():
                 html_file.write(f"<li>{content}</li>\n")
 
             elif line_type == 'blank':
+                flush_paragraph(paragraph_buffer, html_file)
+                paragraph_buffer = []
                 if in_ul:
                     html_file.write("</ul>\n")
                     in_ul = False
@@ -82,17 +97,11 @@ def main():
                     html_file.write("</ol>\n")
                     in_ol = False
 
-            else:
-                # Future paragraph or text support
-                if in_ul:
-                    html_file.write("</ul>\n")
-                    in_ul = False
-                if in_ol:
-                    html_file.write("</ol>\n")
-                    in_ol = False
-                html_file.write(content + "\n")
+            elif line_type == 'paragraph':
+                paragraph_buffer.append(content)
 
-        # Close any open list at EOF
+        # Flush any remaining elements
+        flush_paragraph(paragraph_buffer, html_file)
         if in_ul:
             html_file.write("</ul>\n")
         if in_ol:
