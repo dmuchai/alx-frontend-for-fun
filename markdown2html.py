@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 """
-Markdown to HTML converter - Task 1: Headings
+Markdown to HTML converter - Task 2: Unordered Lists
 """
 
 import sys
@@ -8,16 +8,23 @@ import os
 import re
 
 def convert_line(line):
-    """Convert a Markdown heading to HTML if it's a heading."""
-    match = re.match(r'^(#{1,6}) (.+)', line)
-    if match:
-        hashes, content = match.groups()
-        level = len(hashes)
-        return f"<h{level}>{content.strip()}</h{level}>\n"
-    return None
+    """Convert headings or return line type and content."""
+    heading_match = re.match(r'^(#{1,6}) (.+)', line)
+    if heading_match:
+        level = len(heading_match.group(1))
+        content = heading_match.group(2).strip()
+        return 'heading', f"<h{level}>{content}</h{level}>"
+
+    list_match = re.match(r'^- (.+)', line)
+    if list_match:
+        return 'ul_item', list_match.group(1).strip()
+
+    if line.strip() == "":
+        return 'blank', None
+
+    return 'text', line.strip()
 
 def main():
-    # Check arguments
     if len(sys.argv) < 3:
         sys.stderr.write("Usage: ./markdown2html.py README.md README.html\n")
         exit(1)
@@ -25,20 +32,41 @@ def main():
     input_file = sys.argv[1]
     output_file = sys.argv[2]
 
-    # Check if file exists
     if not os.path.isfile(input_file):
         sys.stderr.write(f"Missing {input_file}\n")
         exit(1)
 
-    # Convert and write output
     with open(input_file, 'r') as md_file, open(output_file, 'w') as html_file:
+        in_list = False
+
         for line in md_file:
-            stripped = line.strip()
-            if not stripped:
-                continue
-            html = convert_line(stripped)
-            if html:
-                html_file.write(html)
+            line_type, content = convert_line(line)
+
+            if line_type == 'heading':
+                if in_list:
+                    html_file.write("</ul>\n")
+                    in_list = False
+                html_file.write(content + "\n")
+
+            elif line_type == 'ul_item':
+                if not in_list:
+                    html_file.write("<ul>\n")
+                    in_list = True
+                html_file.write(f"<li>{content}</li>\n")
+
+            elif line_type == 'blank':
+                if in_list:
+                    html_file.write("</ul>\n")
+                    in_list = False
+
+            else:
+                if in_list:
+                    html_file.write("</ul>\n")
+                    in_list = False
+                # Placeholder for future paragraph handling
+
+        if in_list:
+            html_file.write("</ul>\n")
 
     exit(0)
 
